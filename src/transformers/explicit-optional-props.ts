@@ -29,10 +29,11 @@ export const transformer: Transformer = (ast, { file, target, getLocal }) => {
     return;
   }
 
-  const zentElms = ast.findJSXElementsByModuleName('zent');
+  const allElms = ast.findJSXElements();
+
   for (const [component, props] of entries(changelog)) {
     // 找出该组件
-    const elms = zentElms.find(
+    const elms = allElms.find(
       j.JSXOpeningElement,
       (it: core.JSXOpeningElement) =>
         it.name.type === 'JSXIdentifier' && it.name.name === getLocal(component)
@@ -51,7 +52,9 @@ export const transformer: Transformer = (ast, { file, target, getLocal }) => {
         if (!attr) {
           analyze(
             component,
-            `${yellow(prop.name)} 的默认值改变，已显式指定为旧的默认值 ${red(
+            `The default value of ${yellow(
+              prop.name
+            )} has been changed. Explicitly specify it as ${red(
               toString(prop.value)
             )}`,
             file,
@@ -63,7 +66,7 @@ export const transformer: Transformer = (ast, { file, target, getLocal }) => {
               typeof prop.value === 'string'
                 ? (literal(prop.value) as core.Literal)
                 : prop.value === true
-                ? undefined
+                ? null
                 : j.jsxExpressionContainer(literal(prop.value))
             )
           );

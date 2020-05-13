@@ -1,60 +1,63 @@
 import * as fs from 'fs-extra';
-import { Transformer } from './utils';
+import { send, resolveTransformer, values, keys } from './utils';
 import { j } from './jscodeshift';
 import { Collection } from 'jscodeshift/src/Collection';
 import core from 'jscodeshift';
 import { IOptions } from '.';
+import { highlight } from './hl';
+import chalk from 'chalk';
 
-export interface IWorkerContext {
-  file: string;
-  options: IOptions;
-  transformers: Transformer[];
-}
-
-export enum EWorkerAction {
-  Idle,
-  Error,
-}
-
-export type WorkerMessage =
-  | {
-      action: EWorkerAction.Error;
-      error: any;
-    }
-  | {
-      action: EWorkerAction.Idle;
-    };
+process.on('message', perform);
 
 export async function perform({
   file,
-  options: { target, quote, output },
+  options: { target, quote, output, color, silent },
   transformers,
 }: IWorkerContext) {
   try {
     const source = (await fs.readFile(file)).toString();
     const ast = j(source);
-
+    const helper = createZentHelper(ast);
     for (const transformer of transformers) {
-      transformer(ast, { target, file, ...createZentHelper(ast) });
+      const transformerFn = resolveTransformer(transformer);
+      transformerFn(ast, {
+        target,
+        file,
+        ...helper,
+      });
+    }
+
+    if (!helper.zentImport.find(j.ImportSpecifier).size()) {
+      helper.zentImport.remove();
     }
 
     const out = ast.toSource({ quote });
-    if (output) {
-      console.log(file);
-      console.log(out);
-      console.log('');
-    } else {
-      await fs.writeFile(file, out);
+    const modified = source !== out;
+    if (modified) {
+      if (output && modified && !silent) {
+        let beautified = out;
+        beautified = color ? highlight(beautified) : beautified;
+        beautified = chalk.yellow('1') + '    ' + beautified;
+        let count = 2;
+        beautified = beautified.replace(/\n/g, e => {
+          return (
+            e +
+            chalk.yellow(count++) +
+            ' '.repeat(5 - (count - 1).toString().length)
+          );
+        });
+        console.log(file);
+        console.log(beautified);
+        console.log('');
+      } else {
+        await fs.writeFile(file, out);
+      }
     }
-    process.send?.({ action: EWorkerAction.Idle });
+    send({ action: 'done', file });
   } catch (error) {
-    process.send?.({ action: EWorkerAction.Error, error });
+    send({ action: 'error', message: error?.message || '', file });
   }
 }
-
-process.on('message', perform);
-
-process.send?.({ action: EWorkerAction.Idle });
 
 function createZentHelper(ast: Collection<any>) {
   const mapComponentToLocals: Record<string, string> = {};
@@ -75,5 +78,51 @@ function createZentHelper(ast: Collection<any>) {
   function getLocal(component: string): string | undefined {
     return mapComponentToLocals[component];
   }
-  return { getLocal, zentImport, zentImportSpecifiers };
+  function getImported(local: string) {
+    return keys(mapComponentToLocals).find(
+      it => mapComponentToLocals[it] === local
+    ) as string;
+  }
+  function findZentJSXElements() {
+    return ast.findJSXElements().filter(it => {
+      const { name } = it.node.openingElement;
+      return (
+        name.type === 'JSXIdentifier' &&
+        zentImportSpecifiers.some(
+          it => (it.node.local || it.node.imported).name === name.name
+        )
+      );
+    });
+  }
+  return {
+    getLocal,
+    getImported,
+    findZentJSXElements,
+    zentImport,
+    zentImportSpecifiers,
+  };
 }
+
+export interface IWorkerContext {
+  file: string;
+  options: IOptions;
+  transformers: string[];
+}
+
+export type WorkerMessage =
+  | {
+      action: 'error';
+      file: string;
+      message: string;
+    }
+  | {
+      action: 'done';
+      file: string;
+    }
+  | {
+      action: 'ready';
+    }
+  | {
+      action: 'analyze';
+      analyze: [string, string, string, { line: number; column: number }?];
+    };

@@ -1,14 +1,9 @@
-import {
-  File,
-  JSXOpeningElement,
-  isJSXIdentifier,
-  isJSXAttribute,
-  JSXAttribute,
-} from '@babel/types';
-import traverse from '@babel/traverse';
 import { Collection } from 'jscodeshift/src/Collection';
 import { j } from './jscodeshift';
 import core from 'jscodeshift';
+import { WorkerMessage } from './worker';
+import * as path from 'path';
+import { info } from './logger';
 
 export const { is, keys, values, entries } = Object;
 
@@ -18,6 +13,8 @@ export interface ITransformContext {
   zentImport: Collection<core.ImportDeclaration>;
   zentImportSpecifiers: Collection<core.ImportSpecifier>;
   getLocal(component: string): string | undefined;
+  getImported(local: string): string;
+  findZentJSXElements(): Collection<core.JSXElement>;
 }
 
 export type Transformer = (
@@ -25,69 +22,12 @@ export type Transformer = (
   ctx: ITransformContext
 ) => void;
 
-export function findProp(name: string, jsxOpeningElement: JSXOpeningElement) {
-  const { attributes } = jsxOpeningElement;
-  return attributes.find(
-    attr => isJSXAttribute(attr) && attr.name.name === name
-  ) as JSXAttribute | undefined;
-}
-
 export function isPlainObject(val: any): val is Record<string, any> {
   return (
     val &&
     typeof val === 'object' &&
     Object.prototype.toString.call(val) === '[object Object]'
   );
-}
-
-// export function pipe(...fns: Transformer[]) {
-//   return function (input: Collection<any>, ctx: ITransformContext) {
-//     let result = input;
-//     for (const fn of fns) {
-//       if (temp) {
-//         result = fn(result, ctx);
-//       }
-//     }
-//     return result;
-//   };
-// }
-
-export function findLocal(component: string, ast: File): string | null {
-  let local: string | null = null;
-  traverse(ast, {
-    ImportDeclaration(path) {
-      if (path.node.source.value === 'zent') {
-        path.traverse({
-          ImportSpecifier(path) {
-            const { name } = path.node.imported;
-            if (name === component) {
-              local = path.node.local.name;
-            }
-          },
-        });
-      }
-    },
-  });
-  return local;
-}
-
-export function findComponentLocals(ast: Collection<any>) {
-  const mapComponentToLocal: Record<string, string> = {};
-  const zentImport: Collection<core.ImportDeclaration> = ast.find(
-    j.ImportDeclaration,
-    (node: core.ImportDeclaration) => node.source.value === 'zent'
-  );
-  zentImport.forEach(it => {
-    for (let i = 0; i < it.node.specifiers.length; i++) {
-      const specifier = it.node.specifiers[i];
-      const imported = specifier.name?.name;
-      const local = specifier.local?.name;
-      if (imported) {
-        mapComponentToLocal[imported] = local || imported;
-      }
-    }
-  });
-  return mapComponentToLocal;
 }
 
 export function isComponent(
@@ -141,5 +81,41 @@ export function literal(
     return j.arrayExpression(value.map(it => literal(it)));
   } else {
     return j.literal(value);
+  }
+}
+
+export function send(message: WorkerMessage) {
+  process.send?.(message);
+}
+
+export function resolveTransformer(name: string): Transformer {
+  const modulePath = path.join(__dirname, './transformers', name);
+  try {
+    return require(modulePath).transformer;
+  } catch (e) {
+    info('unknown transformer ' + name);
+    process.exit(1);
+  }
+}
+
+export function renameJSXElement(elm: core.JSXElement, name: string) {
+  elm.openingElement.name = j.jsxIdentifier(name);
+  if (elm.closingElement) {
+    elm.closingElement.name = j.jsxIdentifier(name);
+  }
+}
+
+export type Version = number;
+export type ComponentName = string;
+export type PropName = string;
+
+export function getJSXElementName(node: core.JSXOpeningElement) {
+  switch (node.name.type) {
+    case 'JSXIdentifier':
+      return node.name.name;
+    case 'JSXMemberExpression':
+      return node.name.property.name;
+    default:
+      return null;
   }
 }

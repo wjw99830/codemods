@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "tsc -w",
-    "test": "node ./dist/index.js"
+    "test": "node ./scripts/test.js"
   },
   "dependencies": {
     "@babel/generator": "^7.9.6",
@@ -15,9 +15,11 @@
     "@babel/traverse": "^7.9.6",
     "@babel/types": "^7.9.6",
     "chalk": "^4.0.0",
+    "cli-highlight": "^2.1.4",
     "commander": "^5.1.0",
     "fs-extra": "^9.0.0",
     "globby": "^11.0.0",
+    "highlight.js": "^10.0.3",
     "jscodeshift": "^0.9.0",
     "recast": "^0.19.1",
     "tslib": "^1.11.2",
@@ -31,6 +33,6 @@
     "@types/jscodeshift": "^0.7.0",
     "@types/node": "10.x.x",
     "prettier": "^2.0.5",
-    "typescript": "^3.8.3"
+    "typescript": "^3.9.2"
   }
 }

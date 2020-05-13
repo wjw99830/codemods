@@ -1,5 +1,5 @@
 import { Transformer } from '../utils';
-import { green, red } from 'chalk';
+import { green } from 'chalk';
 import { analyze } from '../analyze';
 import { j } from '../jscodeshift';
 import core from 'jscodeshift';
@@ -31,7 +31,7 @@ export const transformer: Transformer = (
     const { name: importedname } = specifier.imported;
     if (legacy.includes(importedname)) {
       zentImportSpecifiers.at(i).remove();
-      analyze(importedname, `从 ${green('@zent/compat')} 导入`, file);
+      analyze(importedname, `import from ${green('@zent/compat')}`, file);
       zentCompatImport.specifiers.push(
         j.importSpecifier(
           j.identifier(importedname),
@@ -41,7 +41,9 @@ export const transformer: Transformer = (
     }
     i++;
   }
-  ast.find(j.Program, (it: core.Program) => {
-    it.body.unshift(zentCompatImport);
-  });
+  if (zentCompatImport.specifiers.length) {
+    ast.find(j.Program, (it: core.Program) => {
+      it.body.unshift(zentCompatImport);
+    });
+  }
 };

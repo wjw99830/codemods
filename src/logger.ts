@@ -1,6 +1,7 @@
-import { getOptions } from '.';
 import chalk from 'chalk';
 
+const silent = process.argv.includes('--silent') || process.argv.includes('-s');
+
 export function info(msg: string) {
-  getOptions().silent || console.log(chalk.yellow('info: ') + msg);
+  silent || console.log(chalk.yellow('info: ') + msg);
 }
